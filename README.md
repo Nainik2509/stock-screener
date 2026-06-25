@@ -4,9 +4,11 @@ A real-time stock screener for US equities, built with **Next.js (App Router)**,
 **TypeScript**, and **Tailwind CSS**, powered by the **Finnhub** free-tier API for
 market data and a real **LLM** for AI-generated insights.
 
-> Status: in progress. The Finnhub data layer and the REST API routes
-> (`GET /api/stocks`, `GET /api/stock/[symbol]`) are implemented; streaming and UI
-> are next — see the build order in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+> Status: in progress. The Finnhub data layer, the REST API routes
+> (`GET /api/stocks`, `GET /api/stock/[symbol]`), and the live SSE streaming
+> endpoint (`GET /api/stream`, with WebSocket + REST-poll fallback) are
+> implemented; the UI is next — see the build order in
+> [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Documentation
 

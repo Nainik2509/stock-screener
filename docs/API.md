@@ -126,11 +126,53 @@ curl http://localhost:3000/api/stock/GME    # 400 SYMBOL_NOT_ALLOWED
 
 ---
 
-## 🔜 GET /api/stream
+## ✅ GET /api/stream
 
-SSE stream of live price updates (`source: "ws" | "poll"`), fed by the upstream
-Finnhub WebSocket singleton with a REST `/quote` poll fallback. Documented here
-once implemented (Step 4).
+Server-Sent Events (SSE) stream of live price updates, fed by the shared upstream
+Finnhub WebSocket singleton with a REST `/quote` poll fallback when the US market
+is closed.
+
+- **Method:** `GET` (open a long-lived connection, e.g. browser `EventSource`)
+- **Runtime:** Node; **never cached** (`Cache-Control: no-store, no-transform`)
+- **Response headers:** `Content-Type: text/event-stream`, `X-Accel-Buffering: no`
+- **External dependency:** Finnhub WebSocket `wss://ws.finnhub.io` (+ REST
+  `/quote` fallback)
+
+### Behavior
+
+1. On connect, immediately emits the **current snapshot** (one event per known
+   symbol).
+2. Then streams each new update as it arrives (live socket or poll fallback).
+3. A `: keep-alive` comment is sent every 15s so proxies don't time out.
+4. Per-client resources are cleaned up on disconnect; one client leaving never
+   affects others.
+
+### Event payload
+
+Each `data:` line is a compact update (never Finnhub's raw frame):
+
+```
+data: {"symbol":"AAPL","price":293.08,"changePct":-0.41,"source":"poll","ts":1782331200000}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `symbol` | string | Ticker |
+| `price` | number | Latest price |
+| `changePct` | number | % change vs previous close |
+| `source` | `"ws"` \| `"poll"` | `ws` = live socket, `poll` = REST fallback (delayed) |
+| `ts` | number | epoch milliseconds |
+
+> `source` lets the UI show a "live" vs "delayed" badge. During US market hours
+> you'll see `ws` ticks; outside them, `poll` refreshes (~every 30s).
+
+### Example
+
+```bash
+curl -N http://localhost:3000/api/stream
+```
+
+(`-N` disables curl buffering so events appear as they stream.)
 
 ## 🔜 POST /api/insight/[symbol]
 

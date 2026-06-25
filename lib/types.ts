@@ -9,6 +9,22 @@
 /** Where a price value came from. */
 export type DataSource = "rest" | "ws";
 
+/** Freshness label for a live price update: live socket vs REST polling. */
+export type PriceSource = "ws" | "poll";
+
+/**
+ * The minimal real-time update pushed to the browser over SSE. Deliberately
+ * small and decoupled from Finnhub's raw socket frames.
+ */
+export interface PriceUpdate {
+  symbol: string;
+  price: number;
+  changePct: number;
+  source: PriceSource;
+  /** epoch milliseconds */
+  ts: number;
+}
+
 /** A normalized real-time quote. All numbers are finite (never NaN). */
 export interface StockQuote {
   symbol: string;

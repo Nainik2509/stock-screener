@@ -55,7 +55,7 @@ stock-screener/
 │   ├── api/                 # Route Handlers (Node runtime)
 │   │   ├── stocks/          # [x] GET screener list
 │   │   ├── stock/[symbol]/  # [x] GET detail (quote+profile+metrics)
-│   │   ├── stream/          # [ ] GET SSE live prices
+│   │   ├── stream/          # [x] GET SSE live prices
 │   │   └── insight/[symbol]/# [ ] POST LLM insight
 │   ├── globals.css          # [x] Tailwind v4 entry (@import "tailwindcss")
 │   ├── layout.tsx           # [x] Root layout + metadata
@@ -72,7 +72,7 @@ stock-screener/
 │   │   ├── types.ts         # [x] raw Finnhub response shapes
 │   │   ├── client.ts        # [x] typed REST wrappers + screener/detail compose
 │   │   ├── cache.ts         # [x] in-memory TTL cache + single-flight
-│   │   ├── socket.ts        # [ ] upstream WS singleton + poll fallback
+│   │   ├── socket.ts        # [x] upstream WS singleton + poll fallback
 │   │   └── universe.ts      # [x] ~25 US ticker symbols
 │   └── llm/
 │       ├── provider.ts      # [ ] LLMProvider interface + selector

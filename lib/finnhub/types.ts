@@ -64,6 +64,30 @@ export interface FinnhubMetrics {
   symbol?: string;
 }
 
+/** One trade tick from the WebSocket `trade` message `data` array. */
+export interface FinnhubTrade {
+  /** symbol */
+  s: string;
+  /** last price */
+  p: number;
+  /** UNIX timestamp (milliseconds) */
+  t: number;
+  /** volume */
+  v: number;
+  /** trade conditions */
+  c?: string[] | null;
+}
+
+/**
+ * A message from `wss://ws.finnhub.io`. We only act on `trade`; the server also
+ * sends `{ "type": "ping" }` keep-alives which we ignore (the transport layer
+ * already answers protocol pings automatically).
+ */
+export interface FinnhubWsMessage {
+  type: string;
+  data?: FinnhubTrade[];
+}
+
 /** One item from GET /search -> `result` */
 export interface FinnhubSearchItem {
   symbol: string;

@@ -92,6 +92,23 @@ flowchart LR
 - SSE (vs. client WebSocket) is one-directional, which is all we need (server →
   client price pushes), and is simpler and proxy-friendly.
 
+**Implementation notes (as built).**
+- Uses Node's **global `WebSocket`** (available in Node 22+/24) — no `ws`
+  dependency. Transport-level ping/pong is answered automatically, and Finnhub's
+  own `{"type":"ping"}` frames keep traffic flowing, so no manual heartbeat is
+  needed; a close/error triggers reconnect.
+- **Singleton** is stashed on `globalThis` so repeated imports and dev HMR reuse
+  one manager (one upstream socket).
+- **Reconnect:** exponential backoff with jitter, `1s` base → `30s` cap.
+- **Quiet detection:** if no trade arrives for `15s`, a 5s watchdog starts the
+  poll fallback; it stops again the moment live trades resume.
+- **Poll budget:** every `30s` for 25 symbols ≈ 50 calls/min (under the 60 cap).
+- **% change** on a live trade is computed from the cached previous close primed
+  via REST; the initial snapshot is labelled `poll` until the first live tick.
+- The SSE route flushes the current snapshot on connect, then streams updates,
+  and cleans up per client on disconnect (`ReadableStream.cancel` + request
+  `abort`) so one disconnect never affects others.
+
 ---
 
 ## 4. Data flow and caching ✅
@@ -202,7 +219,7 @@ bundle lean. v4's zero-config content detection removes a class of
 
 ---
 
-## 9. API surface and error handling ✅ (REST) / 🔜 (stream, insight)
+## 9. API surface and error handling ✅ (REST + stream) / 🔜 (insight)
 
 **Decision.** Node-runtime route handlers, each returning a typed success shape
 `{ data }` or a typed error envelope `{ error: { code, message } }` — they
@@ -212,7 +229,8 @@ bundle lean. v4's zero-config content detection removes a class of
   CDN-cacheable (`s-maxage=8`).
 - `GET /api/stock/[symbol]` ✅ — detail: quote + profile + metrics; symbol is
   validated (format + restricted to the universe).
-- `GET /api/stream` 🔜 — SSE live prices (`source: ws|poll`); `force-dynamic`.
+- `GET /api/stream` ✅ — SSE live prices (`source: ws|poll`); `force-dynamic`,
+  `no-store`; snapshot-on-connect then live updates.
 - `POST /api/insight/[symbol]` 🔜 — LLM insight from a server-built data summary.
 
 A shared helper (`lib/http.ts`) maps domain error codes to HTTP status:
