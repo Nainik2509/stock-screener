@@ -37,10 +37,13 @@ the same stream is fed by periodic REST `/quote` polling so it always feels live
 | --- | --- | --- |
 | Pages (RSC) | `app/*` | Server-render first paint, compose client components |
 | API routes | `app/api/*` | Validate, call data/LLM layer, return typed JSON/SSE (Node runtime) |
-| Feature components | `components/*` | Screener table, filters, detail panel, insight card (Tailwind only) |
+| Screener feature | `components/screener/*` | Live table, row, status badge, empty states (Tailwind only) |
+| Global UI | `components/*.tsx` | Layout-level components (ThemeToggle); future: FilterBar, DetailPanel, InsightCard |
 | Data layer | `lib/finnhub/*` | REST client, TTL cache, WS singleton, symbol universe, raw types |
-| AI layer | `lib/llm/*` | Provider-agnostic LLM adapter |
-| Shared types/utils | `lib/*` | App-facing DTOs and pure helpers |
+| AI layer | `lib/llm/*` | Provider-agnostic LLM adapter (planned) |
+| Shared types | `lib/types.ts` | App-facing DTOs — decoupled from raw Finnhub shapes |
+| Formatters | `lib/formatters.ts` | Pure price/market-cap formatting helpers (no React) |
+| HTTP helpers | `lib/http.ts` | Route response envelopes and status mapping |
 
 ## Project structure
 
@@ -52,39 +55,45 @@ Legend: `[x]` implemented · `[ ]` planned in a later phase.
 ```
 stock-screener/
 ├── app/
-│   ├── api/                 # Route Handlers (Node runtime)
-│   │   ├── stocks/          # [x] GET screener list
-│   │   ├── stock/[symbol]/  # [x] GET detail (quote+profile+metrics)
-│   │   ├── stream/          # [x] GET SSE live prices
-│   │   └── insight/[symbol]/# [ ] POST LLM insight
-│   ├── globals.css          # [x] Tailwind v4 entry (@import "tailwindcss")
-│   ├── layout.tsx           # [x] Root layout + metadata
-│   └── page.tsx             # [x] Home placeholder (RSC) -> ScreenerTable later
-├── components/              # Client/presentational components (Tailwind only)
-│   ├── ScreenerTable.tsx    # [ ] live table: SSE merge, sort
-│   ├── FilterBar.tsx        # [ ] URL-synced filters
-│   ├── DetailPanel.tsx      # [ ] ?symbol= side panel
-│   └── InsightCard.tsx      # [ ] AI insight (isolated failures)
+│   ├── api/                        # Route Handlers (Node runtime)
+│   │   ├── stocks/route.ts         # [x] GET screener list
+│   │   ├── stock/[symbol]/route.ts # [x] GET detail (quote+profile+metrics)
+│   │   ├── stream/route.ts         # [x] GET SSE live prices
+│   │   └── insight/[symbol]/       # [ ] POST LLM insight
+│   ├── globals.css                 # [x] Tailwind v4 + dark variant + flash keyframes
+│   ├── layout.tsx                  # [x] Root layout, theme script, header
+│   └── page.tsx                    # [x] Home RSC — fetches seed, mounts ScreenerTable
+├── components/
+│   ├── screener/                   # Feature folder: everything screener-related
+│   │   ├── ScreenerTable.tsx       # [x] "use client" — SSE state, row updates
+│   │   ├── StockRow.tsx            # [x] presentational row (FlashDir type)
+│   │   ├── StatusBadge.tsx         # [x] live/delayed/reconnecting badge (ConnectionStatus)
+│   │   └── ScreenerEmpty.tsx       # [x] EmptyState + LoadError
+│   ├── ThemeToggle.tsx             # [x] dark/light toggle (layout-level concern)
+│   ├── FilterBar.tsx               # [ ] URL-synced filters (Step 6)
+│   ├── DetailPanel.tsx             # [ ] ?symbol= side panel (Step 6)
+│   └── InsightCard.tsx             # [ ] AI insight (Step 7)
 ├── lib/
-│   ├── types.ts             # [x] app-facing DTOs (+ StockDetail)
-│   ├── http.ts              # [x] route response helpers (jsonOk/jsonError/status)
+│   ├── types.ts                    # [x] app-facing DTOs (StockQuote, ScreenerRow, StockDetail…)
+│   ├── formatters.ts               # [x] pure price/marketCap formatting helpers
+│   ├── http.ts                     # [x] route response helpers (jsonOk/jsonError/statusForCode)
 │   ├── finnhub/
-│   │   ├── types.ts         # [x] raw Finnhub response shapes
-│   │   ├── client.ts        # [x] typed REST wrappers + screener/detail compose
-│   │   ├── cache.ts         # [x] in-memory TTL cache + single-flight
-│   │   ├── socket.ts        # [x] upstream WS singleton + poll fallback
-│   │   └── universe.ts      # [x] ~25 US ticker symbols
-│   └── llm/
-│       ├── provider.ts      # [ ] LLMProvider interface + selector
-│       ├── gemini.ts        # [ ] Gemini implementation
-│       └── openai.ts        # [ ] OpenAI implementation
+│   │   ├── types.ts                # [x] raw Finnhub response shapes
+│   │   ├── client.ts               # [x] typed REST wrappers + screener/detail composers
+│   │   ├── cache.ts                # [x] in-memory TTL cache + single-flight
+│   │   ├── socket.ts               # [x] upstream WS singleton + REST poll fallback
+│   │   └── universe.ts             # [x] ~25 US ticker symbols (never prices)
+│   └── llm/                        # [ ] LLM adapter (Step 7)
+│       ├── provider.ts             # [ ] LLMProvider interface + auto-selector
+│       ├── gemini.ts               # [ ] Gemini 2.0-flash implementation
+│       └── openai.ts               # [ ] OpenAI gpt-4o-mini implementation
 ├── docs/
-│   ├── DECISIONS.md         # [x] decisions & trade-offs
-│   ├── ARCHITECTURE.md      # [x] this file
-│   └── API.md               # [x] per-route contracts
-├── .claude/CLAUDE.md        # AI guidance + hard constraints
-├── .env.example             # documented env vars (server-side only)
-├── README.md                # entry point + navigation
+│   ├── DECISIONS.md                # [x] decisions & trade-offs
+│   ├── ARCHITECTURE.md             # [x] this file
+│   └── API.md                      # [x] per-route contracts
+├── .claude/CLAUDE.md               # AI guidance + hard constraints
+├── .env.example                    # documented env vars (server-side only)
+├── README.md                       # entry point + navigation
 └── (next.config.ts, tsconfig.json, eslint.config.mjs, postcss.config.mjs)
 ```
 
