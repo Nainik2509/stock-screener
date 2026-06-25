@@ -39,7 +39,8 @@ the same stream is fed by periodic REST `/quote` polling so it always feels live
 | API routes | `app/api/*` | Validate, call data/LLM layer, return typed JSON/SSE (Node runtime) |
 | Screener feature | `components/screener/*` | Live table, row, status badge, empty/no-match states (Tailwind only) |
 | Filter feature | `components/filter/*` | Controlled filter bar (chip + input UI); no URL logic inside |
-| Global UI | `components/*.tsx` | Layout-level components (ThemeToggle); future: DetailPanel, InsightCard |
+| Detail feature | `components/detail/*` | Slide-in panel: Range52W bar, StatItem, PanelSkeleton, DetailPanel |
+| Global UI | `components/*.tsx` | Layout-level components (ThemeToggle); future: InsightCard |
 | Data layer | `lib/finnhub/*` | REST client, TTL cache, WS singleton, symbol universe, raw types, shared math |
 | AI layer | `lib/llm/*` | Provider-agnostic LLM adapter (planned) |
 | Shared types | `lib/types.ts` | App-facing DTOs — decoupled from raw Finnhub shapes |
@@ -73,8 +74,12 @@ stock-screener/
 │   │   └── ScreenerEmpty.tsx       # [x] EmptyState + LoadError + NoMatches
 │   ├── filter/                     # Feature folder: filter bar
 │   │   └── FilterBar.tsx           # [x] controlled filter chip + input UI
+│   ├── detail/                     # Feature folder: stock detail panel
+│   │   ├── DetailPanel.tsx         # [x] slide-in panel, URL-synced, live price overlay
+│   │   ├── Range52W.tsx            # [x] 52-week range horizontal bar
+│   │   ├── StatItem.tsx            # [x] label/value stat row
+│   │   └── PanelSkeleton.tsx       # [x] animated loading skeleton
 │   ├── ThemeToggle.tsx             # [x] dark/light toggle (layout-level concern)
-│   ├── DetailPanel.tsx             # [ ] ?symbol= side panel (Step 7)
 │   └── InsightCard.tsx             # [ ] AI insight (Step 8)
 ├── lib/
 │   ├── types.ts                    # [x] app-facing DTOs (StockQuote, ScreenerRow, StockDetail…)

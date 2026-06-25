@@ -100,6 +100,7 @@ data.
     "low": 292.94,
     "marketCap": 4304570.25,
     "industry": "Technology",
+    "exchange": "NASDAQ/NMS (GLOBAL MARKET)",
     "currency": "USD",
     "logo": "https://.../AAPL.png",
     "peRatio": 35.73,
@@ -114,8 +115,8 @@ data.
 ```
 
 > `volume` is the **10-day average** trading volume (free-tier proxy; `/quote`
-> has no intraday volume). Optional fields (`peRatio`, `week52High/Low`, `volume`,
-> `logo`) may be absent when Finnhub omits them.
+> has no intraday volume). `exchange` comes from `/stock/profile2`. Optional fields
+> (`peRatio`, `week52High/Low`, `volume`, `logo`) may be absent when Finnhub omits them.
 
 ### Error examples
 

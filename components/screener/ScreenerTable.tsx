@@ -16,6 +16,7 @@ import {
   paramsToFilters,
 } from "@/lib/filters";
 import type { ScreenerFilters } from "@/lib/filters";
+import { UNIVERSE } from "@/lib/finnhub/universe";
 import { FilterBar } from "@/components/filter/FilterBar";
 import { StatusBadge } from "@/components/screener/StatusBadge";
 import type { ConnectionStatus } from "@/components/screener/StatusBadge";
@@ -26,6 +27,7 @@ import {
   LoadError,
   NoMatches,
 } from "@/components/screener/ScreenerEmpty";
+import { DetailPanel } from "@/components/detail/DetailPanel";
 
 interface Props {
   initialRows: ScreenerRow[];
@@ -36,8 +38,8 @@ interface Props {
  * Live screener table. Responsibilities:
  *  - Seed row state from the RSC initial fetch.
  *  - Maintain one SSE connection to /api/stream and merge price updates in place.
- *  - Manage filter state, sync it to the URL, and apply filters to the row list.
- *  - Delegate rendering sub-tasks to focused sub-components.
+ *  - Manage filter state + selected symbol, both synced to the URL.
+ *  - Render the detail panel when a stock is selected.
  */
 export default function ScreenerTable({
   initialRows,
@@ -121,28 +123,53 @@ export default function ScreenerTable({
   }, [handleUpdate]);
 
   // -------------------------------------------------------------------------
-  // Filter state — initialised from URL search params on mount
+  // URL state — filters + selected symbol live together in search params
   // -------------------------------------------------------------------------
 
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
 
+  // Initialise filter state from URL on mount.
   const [filters, setFilters] = useState<ScreenerFilters>(() =>
     paramsToFilters(searchParams),
+  );
+
+  // Initialise selected symbol from URL on mount; validate against universe so
+  // arbitrary URL values can't trigger unchecked API calls.
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(() => {
+    const sym = searchParams.get("symbol")?.toUpperCase() ?? null;
+    return sym !== null && UNIVERSE.includes(sym) ? sym : null;
+  });
+
+  /**
+   * Single source of truth for URL updates. Both filters and the selected
+   * symbol are reflected together so neither is lost when the other changes.
+   */
+  const pushUrl = useCallback(
+    (f: ScreenerFilters, sym: string | null) => {
+      const params = new URLSearchParams(filtersToParams(f));
+      if (sym) params.set("symbol", sym);
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router],
   );
 
   const updateFilters = useCallback(
     (next: ScreenerFilters) => {
       setFilters(next);
-      // Reflect filters in the URL so the view is shareable and
-      // refresh-recoverable without triggering a server re-fetch (the RSC
-      // page does not consume searchParams).
-      const params = new URLSearchParams(filtersToParams(next));
-      const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+      pushUrl(next, selectedSymbol);
     },
-    [pathname, router],
+    [pushUrl, selectedSymbol],
+  );
+
+  const selectSymbol = useCallback(
+    (sym: string | null) => {
+      setSelectedSymbol(sym);
+      pushUrl(filters, sym);
+    },
+    [pushUrl, filters],
   );
 
   const resetFilters = useCallback(
@@ -150,11 +177,25 @@ export default function ScreenerTable({
     [updateFilters],
   );
 
-  // Apply all active filters to the full row list. Recomputes when either
-  // rows (SSE update) or filters (user interaction) change.
+  // Stable close callback to avoid unnecessary escape-key effect re-runs.
+  const closePanel = useCallback(() => selectSymbol(null), [selectSymbol]);
+
+  // -------------------------------------------------------------------------
+  // Derived state
+  // -------------------------------------------------------------------------
+
   const displayRows = useMemo(
     () => applyFilters(rows, filters),
     [rows, filters],
+  );
+
+  // Live row for the selected symbol — feeds real-time price into the panel.
+  const liveRow = useMemo(
+    () =>
+      selectedSymbol !== null
+        ? rows.find((r) => r.symbol === selectedSymbol)
+        : undefined,
+    [rows, selectedSymbol],
   );
 
   // Formatted once per mount — the date doesn't change mid-session.
@@ -173,83 +214,96 @@ export default function ScreenerTable({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
-      {/* Page title */}
-      <div className="mb-5">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-          Market Overview
-        </h1>
-        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          Showing {displayRows.length} of {rows.length} stocks · sorted by
-          market cap
-        </p>
+    <>
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        {/* Page title */}
+        <div className="mb-5">
+          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+            Market Overview
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+            Showing {displayRows.length} of {rows.length} stocks · sorted by
+            market cap
+          </p>
+        </div>
+
+        {/* Non-fatal load error */}
+        {initialError && rows.length === 0 && <LoadError />}
+
+        {/* Filter bar */}
+        <FilterBar
+          filters={filters}
+          onChange={updateFilters}
+          matchCount={displayRows.length}
+          totalCount={rows.length}
+        />
+
+        {/* Empty states + table */}
+        {rows.length === 0 && !initialError ? (
+          <EmptyState />
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            {/* Status bar */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
+              <span className="text-xs text-slate-400 dark:text-slate-500">
+                {todayLabel}
+              </span>
+              <StatusBadge status={status} />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[480px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-500">
+                    <th className="w-10 px-3 py-3 text-center">#</th>
+                    <th className="px-4 py-3">Symbol</th>
+                    <th className="hidden px-4 py-3 sm:table-cell">Company</th>
+                    <th className="px-4 py-3 text-right">Price</th>
+                    <th className="px-4 py-3 text-right">Change</th>
+                    <th className="hidden px-4 py-3 text-right lg:table-cell">
+                      Mkt Cap
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                  {displayRows.length === 0 ? (
+                    <NoMatches onReset={resetFilters} />
+                  ) : (
+                    displayRows.map((row, i) => (
+                      <StockRow
+                        key={row.symbol}
+                        row={row}
+                        rank={i + 1}
+                        flashDir={flashes[row.symbol]}
+                        onClick={() => selectSymbol(row.symbol)}
+                        isSelected={selectedSymbol === row.symbol}
+                      />
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-100 px-4 py-2.5 text-right text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
+              {status === "polling"
+                ? "Prices delayed · REST polling fallback (market closed or socket idle)"
+                : status === "live"
+                  ? "Prices updating in real-time via Finnhub WebSocket"
+                  : "Prices from last successful fetch"}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Non-fatal load error */}
-      {initialError && rows.length === 0 && <LoadError />}
-
-      {/* Filter bar — always visible */}
-      <FilterBar
-        filters={filters}
-        onChange={updateFilters}
-        matchCount={displayRows.length}
-        totalCount={rows.length}
-      />
-
-      {/* Empty states */}
-      {rows.length === 0 && !initialError ? (
-        <EmptyState />
-      ) : (
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          {/* Status bar */}
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
-            <span className="text-xs text-slate-400 dark:text-slate-500">
-              {todayLabel}
-            </span>
-            <StatusBadge status={status} />
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[480px] border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-400 dark:border-slate-800 dark:bg-slate-800/50 dark:text-slate-500">
-                  <th className="w-10 px-3 py-3 text-center">#</th>
-                  <th className="px-4 py-3">Symbol</th>
-                  <th className="hidden px-4 py-3 sm:table-cell">Company</th>
-                  <th className="px-4 py-3 text-right">Price</th>
-                  <th className="px-4 py-3 text-right">Change</th>
-                  <th className="hidden px-4 py-3 text-right lg:table-cell">
-                    Mkt Cap
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {displayRows.length === 0 ? (
-                  <NoMatches onReset={resetFilters} />
-                ) : (
-                  displayRows.map((row, i) => (
-                    <StockRow
-                      key={row.symbol}
-                      row={row}
-                      rank={i + 1}
-                      flashDir={flashes[row.symbol]}
-                    />
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Footer note */}
-          <div className="border-t border-slate-100 px-4 py-2.5 text-right text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
-            {status === "polling"
-              ? "Prices delayed · REST polling fallback (market closed or socket idle)"
-              : status === "live"
-                ? "Prices updating in real-time via Finnhub WebSocket"
-                : "Prices from last successful fetch"}
-          </div>
-        </div>
+      {/* Detail panel — rendered outside the table container so it can be fixed */}
+      {selectedSymbol !== null && (
+        <DetailPanel
+          symbol={selectedSymbol}
+          liveRow={liveRow}
+          onClose={closePanel}
+        />
       )}
-    </div>
+    </>
   );
 }

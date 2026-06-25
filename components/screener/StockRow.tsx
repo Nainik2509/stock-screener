@@ -9,14 +9,16 @@ interface Props {
   rank: number;
   /** Undefined means no flash is active for this row. */
   flashDir: FlashDir | undefined;
+  /** Opens the detail panel for this stock. */
+  onClick: () => void;
+  /** Highlights the row when its detail panel is open. */
+  isSelected: boolean;
 }
 
 /**
  * A single screener table row. Purely presentational — no hooks, no state.
- * The `cursor-pointer` class is set here so it's ready for the click handler
- * that opens the detail panel (wired up in Step 6).
  */
-export function StockRow({ row, rank, flashDir }: Props) {
+export function StockRow({ row, rank, flashDir, onClick, isSelected }: Props) {
   const isUp = row.change >= 0;
   const changeCls = isUp
     ? "text-green-600 dark:text-green-400"
@@ -24,9 +26,13 @@ export function StockRow({ row, rank, flashDir }: Props) {
 
   return (
     <tr
+      onClick={onClick}
+      aria-selected={isSelected}
       className={[
         "cursor-pointer transition-colors duration-150",
-        "hover:bg-slate-50 dark:hover:bg-slate-800/40",
+        isSelected
+          ? "bg-blue-50/80 dark:bg-blue-950/20"
+          : "hover:bg-slate-50 dark:hover:bg-slate-800/40",
         flashDir === "up" ? "price-flash-up" : "",
         flashDir === "down" ? "price-flash-down" : "",
       ]

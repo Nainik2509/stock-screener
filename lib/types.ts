@@ -46,6 +46,7 @@ export interface StockProfile {
   /** market cap in millions of `currency` (Finnhub's unit) */
   marketCap: number;
   industry: string;
+  exchange: string;
   currency: string;
   logo?: string;
 }
@@ -106,6 +107,7 @@ export interface StockDetail extends ScreenerRow {
   /** intraday low */
   low: number;
   industry: string;
+  exchange: string;
   currency: string;
   logo?: string;
   /** 10-day average trading volume (free-tier proxy for volume) */

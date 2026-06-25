@@ -335,6 +335,54 @@ stock crosses into or out of a movement filter.
 
 ---
 
+## 13. Detail view: slide-in panel with URL sync ✅
+
+**Context.** The analyst needs expanded information for a selected stock without
+losing their screener view. The view must be shareable via URL.
+
+**Decision.**
+
+- **Pattern**: fixed right-side slide-in panel (`position: fixed`, `z-40`), not a
+  separate page or modal. The screener table stays fully mounted and continues
+  receiving SSE updates behind a semi-transparent backdrop. The analyst can close
+  the panel and immediately re-focus on the table.
+
+- **URL sync**: the selected symbol is encoded as `?symbol=AAPL` alongside filter
+  params in a single `router.replace()` call. Both filter state and panel state are
+  managed in `ScreenerTable` via a shared `pushUrl(filters, sym)` helper, so
+  neither is silently dropped when the other changes. Validates against `UNIVERSE`
+  on URL init so arbitrary `?symbol=` values never trigger unchecked API calls.
+
+- **Live price overlay**: the panel receives `liveRow: ScreenerRow | undefined`
+  (a `useMemo`-derived slice of the live `rows` array) so the header price updates
+  in real time via the same SSE feed as the table — no second SSE connection.
+
+- **Data fetch**: a single `useReducer` (`loading → success | error`) consolidates
+  three state variables into one discriminated union. A `dispatch({ type: "start"
+  })` atomically resets all fetch sub-states, avoiding the
+  `react-hooks/set-state-in-effect` linter rule (which flags three separate
+  synchronous `setState` calls inside an effect body).
+
+- **What the panel shows:**
+  - Live price/change (from SSE overlay) and company name (from fetch).
+  - 52-week range: a horizontal bar showing where the current price sits between
+    52W low and 52W high — visually immediate, no numbers needed to get the idea.
+  - Key stats: P/E, day high/low, open, prev close, 52W high/low, avg volume, mkt cap.
+  - Company profile: industry, exchange, currency.
+  - An "AI Insight" placeholder card (wired up in Step 8).
+
+- **Why a panel over a dedicated route?** The screener's primary value is watching
+  multiple stocks live; navigating away loses that context. A panel keeps both
+  visible. A `?symbol=` param preserves shareability without a separate URL.
+
+**Trade-offs.**
+- A backdrop prevents direct table interaction while the panel is open. Acceptable
+  for this scope; a production tool might use a resizable split-pane layout instead.
+- The `liveRow` memo (`rows.find(...)`) re-runs on every SSE tick, but `Array.find`
+  on ~25 items is negligible.
+
+---
+
 ## Notable trade-offs summary (called out, not hidden)
 
 - **Single-instance assumption** for the SSE/WS singleton and in-memory cache —
