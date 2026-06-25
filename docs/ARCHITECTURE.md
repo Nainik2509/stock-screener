@@ -37,11 +37,13 @@ the same stream is fed by periodic REST `/quote` polling so it always feels live
 | --- | --- | --- |
 | Pages (RSC) | `app/*` | Server-render first paint, compose client components |
 | API routes | `app/api/*` | Validate, call data/LLM layer, return typed JSON/SSE (Node runtime) |
-| Screener feature | `components/screener/*` | Live table, row, status badge, empty states (Tailwind only) |
-| Global UI | `components/*.tsx` | Layout-level components (ThemeToggle); future: FilterBar, DetailPanel, InsightCard |
-| Data layer | `lib/finnhub/*` | REST client, TTL cache, WS singleton, symbol universe, raw types |
+| Screener feature | `components/screener/*` | Live table, row, status badge, empty/no-match states (Tailwind only) |
+| Filter feature | `components/filter/*` | Controlled filter bar (chip + input UI); no URL logic inside |
+| Global UI | `components/*.tsx` | Layout-level components (ThemeToggle); future: DetailPanel, InsightCard |
+| Data layer | `lib/finnhub/*` | REST client, TTL cache, WS singleton, symbol universe, raw types, shared math |
 | AI layer | `lib/llm/*` | Provider-agnostic LLM adapter (planned) |
 | Shared types | `lib/types.ts` | App-facing DTOs — decoupled from raw Finnhub shapes |
+| Filters | `lib/filters.ts` | Pure filter types, `applyFilters`, and URL serialisation helpers |
 | Formatters | `lib/formatters.ts` | Pure price/market-cap formatting helpers (no React) |
 | HTTP helpers | `lib/http.ts` | Route response envelopes and status mapping |
 
@@ -65,16 +67,18 @@ stock-screener/
 │   └── page.tsx                    # [x] Home RSC — fetches seed, mounts ScreenerTable
 ├── components/
 │   ├── screener/                   # Feature folder: everything screener-related
-│   │   ├── ScreenerTable.tsx       # [x] "use client" — SSE state, row updates
+│   │   ├── ScreenerTable.tsx       # [x] "use client" — SSE state, filter state, URL sync
 │   │   ├── StockRow.tsx            # [x] presentational row (FlashDir type)
 │   │   ├── StatusBadge.tsx         # [x] live/delayed/reconnecting badge (ConnectionStatus)
-│   │   └── ScreenerEmpty.tsx       # [x] EmptyState + LoadError
+│   │   └── ScreenerEmpty.tsx       # [x] EmptyState + LoadError + NoMatches
+│   ├── filter/                     # Feature folder: filter bar
+│   │   └── FilterBar.tsx           # [x] controlled filter chip + input UI
 │   ├── ThemeToggle.tsx             # [x] dark/light toggle (layout-level concern)
-│   ├── FilterBar.tsx               # [ ] URL-synced filters (Step 6)
-│   ├── DetailPanel.tsx             # [ ] ?symbol= side panel (Step 6)
-│   └── InsightCard.tsx             # [ ] AI insight (Step 7)
+│   ├── DetailPanel.tsx             # [ ] ?symbol= side panel (Step 7)
+│   └── InsightCard.tsx             # [ ] AI insight (Step 8)
 ├── lib/
 │   ├── types.ts                    # [x] app-facing DTOs (StockQuote, ScreenerRow, StockDetail…)
+│   ├── filters.ts                  # [x] ScreenerFilters type, applyFilters, URL helpers
 │   ├── formatters.ts               # [x] pure price/marketCap formatting helpers
 │   ├── http.ts                     # [x] route response helpers (jsonOk/jsonError/statusForCode)
 │   ├── finnhub/
@@ -82,6 +86,7 @@ stock-screener/
 │   │   ├── client.ts               # [x] typed REST wrappers + screener/detail composers
 │   │   ├── cache.ts                # [x] in-memory TTL cache + single-flight
 │   │   ├── socket.ts               # [x] upstream WS singleton + REST poll fallback
+│   │   ├── math.ts                 # [x] shared numeric helpers (round2) — no duplication
 │   │   └── universe.ts             # [x] ~25 US ticker symbols (never prices)
 │   └── llm/                        # [ ] LLM adapter (Step 7)
 │       ├── provider.ts             # [ ] LLMProvider interface + auto-selector

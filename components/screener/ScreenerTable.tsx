@@ -1,12 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { PriceUpdate, ScreenerRow } from "@/lib/types";
+import {
+  DEFAULT_FILTERS,
+  applyFilters,
+  filtersToParams,
+  paramsToFilters,
+} from "@/lib/filters";
+import type { ScreenerFilters } from "@/lib/filters";
+import { FilterBar } from "@/components/filter/FilterBar";
 import { StatusBadge } from "@/components/screener/StatusBadge";
 import type { ConnectionStatus } from "@/components/screener/StatusBadge";
 import { StockRow } from "@/components/screener/StockRow";
 import type { FlashDir } from "@/components/screener/StockRow";
-import { EmptyState, LoadError } from "@/components/screener/ScreenerEmpty";
+import {
+  EmptyState,
+  LoadError,
+  NoMatches,
+} from "@/components/screener/ScreenerEmpty";
 
 interface Props {
   initialRows: ScreenerRow[];
@@ -15,18 +34,19 @@ interface Props {
 
 /**
  * Live screener table. Responsibilities:
- *  - Maintain row state initialised from the RSC seed.
- *  - Open one SSE connection to /api/stream and merge updates in place.
- *  - Track per-symbol flash direction and clear it after the animation.
- *  - Expose connection status via a badge.
- *
- * Rendering sub-tasks are delegated to focused sub-components:
- *  StockRow, StatusBadge, EmptyState, LoadError.
+ *  - Seed row state from the RSC initial fetch.
+ *  - Maintain one SSE connection to /api/stream and merge price updates in place.
+ *  - Manage filter state, sync it to the URL, and apply filters to the row list.
+ *  - Delegate rendering sub-tasks to focused sub-components.
  */
 export default function ScreenerTable({
   initialRows,
   initialError = false,
 }: Props) {
+  // -------------------------------------------------------------------------
+  // Row + live-update state
+  // -------------------------------------------------------------------------
+
   const [rows, setRows] = useState<ScreenerRow[]>(() =>
     [...initialRows].sort((a, b) => b.marketCap - a.marketCap),
   );
@@ -34,7 +54,7 @@ export default function ScreenerTable({
   // Partial so indexed access is explicitly T | undefined (noUncheckedIndexedAccess).
   const [flashes, setFlashes] = useState<Partial<Record<string, FlashDir>>>({});
 
-  // Track the last price per symbol to determine flash direction on update.
+  // Track last price per symbol to compute flash direction.
   const prevPrices = useRef<Map<string, number>>(
     new Map(initialRows.map((r) => [r.symbol, r.price])),
   );
@@ -55,13 +75,12 @@ export default function ScreenerTable({
       }, 900);
     }
 
-    // Update only the changed row; sort order is stable (sorted by marketCap,
-    // which the stream doesn't update).
+    // Update only the changed row; sort order is stable (sorted by marketCap).
     setRows((prev) => {
       const idx = prev.findIndex((r) => r.symbol === update.symbol);
       if (idx === -1) return prev;
-      // idx is in-bounds (findIndex guarantees), but noUncheckedIndexedAccess
-      // requires the assertion.
+      // idx is in-bounds (findIndex guarantees); assertion required by
+      // noUncheckedIndexedAccess.
       const existing = prev[idx]!;
       const next = [...prev];
       next[idx] = {
@@ -82,7 +101,7 @@ export default function ScreenerTable({
     const es = new EventSource("/api/stream");
 
     es.onmessage = (event: MessageEvent) => {
-      // event.data is typed as `any` in the DOM lib; narrow to string first.
+      // event.data is typed as `any` in the DOM lib; narrow before use.
       if (typeof event.data !== "string") return;
       try {
         const update = JSON.parse(event.data) as PriceUpdate;
@@ -93,7 +112,6 @@ export default function ScreenerTable({
     };
 
     es.onerror = () => {
-      // EventSource auto-reconnects; just reflect the transient state.
       setStatus("error");
     };
 
@@ -102,19 +120,83 @@ export default function ScreenerTable({
     };
   }, [handleUpdate]);
 
+  // -------------------------------------------------------------------------
+  // Filter state — initialised from URL search params on mount
+  // -------------------------------------------------------------------------
+
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const [filters, setFilters] = useState<ScreenerFilters>(() =>
+    paramsToFilters(searchParams),
+  );
+
+  const updateFilters = useCallback(
+    (next: ScreenerFilters) => {
+      setFilters(next);
+      // Reflect filters in the URL so the view is shareable and
+      // refresh-recoverable without triggering a server re-fetch (the RSC
+      // page does not consume searchParams).
+      const params = new URLSearchParams(filtersToParams(next));
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router],
+  );
+
+  const resetFilters = useCallback(
+    () => updateFilters(DEFAULT_FILTERS),
+    [updateFilters],
+  );
+
+  // Apply all active filters to the full row list. Recomputes when either
+  // rows (SSE update) or filters (user interaction) change.
+  const displayRows = useMemo(
+    () => applyFilters(rows, filters),
+    [rows, filters],
+  );
+
+  // Formatted once per mount — the date doesn't change mid-session.
+  const todayLabel = useMemo(
+    () =>
+      new Date().toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      }),
+    [],
+  );
+
+  // -------------------------------------------------------------------------
+  // Render
+  // -------------------------------------------------------------------------
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+      {/* Page title */}
       <div className="mb-5">
         <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
           Market Overview
         </h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          {rows.length} stocks · sorted by market cap
+          Showing {displayRows.length} of {rows.length} stocks · sorted by
+          market cap
         </p>
       </div>
 
+      {/* Non-fatal load error */}
       {initialError && rows.length === 0 && <LoadError />}
 
+      {/* Filter bar — always visible */}
+      <FilterBar
+        filters={filters}
+        onChange={updateFilters}
+        matchCount={displayRows.length}
+        totalCount={rows.length}
+      />
+
+      {/* Empty states */}
       {rows.length === 0 && !initialError ? (
         <EmptyState />
       ) : (
@@ -122,11 +204,7 @@ export default function ScreenerTable({
           {/* Status bar */}
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5 dark:border-slate-800">
             <span className="text-xs text-slate-400 dark:text-slate-500">
-              {new Date().toLocaleDateString("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-              })}
+              {todayLabel}
             </span>
             <StatusBadge status={status} />
           </div>
@@ -146,18 +224,23 @@ export default function ScreenerTable({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {rows.map((row, i) => (
-                  <StockRow
-                    key={row.symbol}
-                    row={row}
-                    rank={i + 1}
-                    flashDir={flashes[row.symbol]}
-                  />
-                ))}
+                {displayRows.length === 0 ? (
+                  <NoMatches onReset={resetFilters} />
+                ) : (
+                  displayRows.map((row, i) => (
+                    <StockRow
+                      key={row.symbol}
+                      row={row}
+                      rank={i + 1}
+                      flashDir={flashes[row.symbol]}
+                    />
+                  ))
+                )}
               </tbody>
             </table>
           </div>
 
+          {/* Footer note */}
           <div className="border-t border-slate-100 px-4 py-2.5 text-right text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
             {status === "polling"
               ? "Prices delayed · REST polling fallback (market closed or socket idle)"

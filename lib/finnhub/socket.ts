@@ -2,6 +2,7 @@ import "server-only";
 
 import { getScreenerRows } from "@/lib/finnhub/client";
 import { UNIVERSE } from "@/lib/finnhub/universe";
+import { round2 } from "@/lib/finnhub/math";
 import type { FinnhubTrade, FinnhubWsMessage } from "@/lib/finnhub/types";
 import type { PriceUpdate } from "@/lib/types";
 
@@ -216,10 +217,6 @@ class FinnhubSocketManager {
       });
     }
   }
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 // True process-wide singleton. Stash the instance on globalThis so repeated

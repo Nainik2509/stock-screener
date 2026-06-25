@@ -219,7 +219,36 @@ bundle lean. v4's zero-config content detection removes a class of
 
 ---
 
-## 9. API surface and error handling ✅ (REST + stream) / 🔜 (insight)
+## 9. Component structure: feature-first folders ✅
+
+**Context.** As the screener UI grew (live table, badge, empty/error states,
+row animations) it became clear that a flat `components/` folder would make
+individual concerns hard to locate and test in isolation.
+
+**Decision.** Adopt a **feature-first** folder layout:
+
+```
+components/
+├── screener/          ← everything owned by the screener feature
+│   ├── ScreenerTable.tsx   ← "use client" — SSE state, flash management
+│   ├── StockRow.tsx        ← presentational row (FlashDir type)
+│   ├── StatusBadge.tsx     ← connection status (ConnectionStatus type)
+│   └── ScreenerEmpty.tsx   ← EmptyState + LoadError
+└── ThemeToggle.tsx    ← layout-level concern; stays at root
+```
+
+Pure number/currency helpers that have no React dependency live in
+`lib/formatters.ts` so they can be imported by any layer (components, tests,
+or even API routes) without pulling in React.
+
+**Trade-offs.** Slightly more import paths than a flat layout, but each file
+has a single, obvious responsibility and the feature boundary is clear. When
+`FilterBar`, `DetailPanel`, and `InsightCard` land in later steps they will
+follow the same pattern (`components/filter/`, `components/detail/`, etc.).
+
+---
+
+## 10. API surface and error handling ✅ (REST + stream) / 🔜 (insight)
 
 **Decision.** Node-runtime route handlers, each returning a typed success shape
 `{ data }` or a typed error envelope `{ error: { code, message } }` — they
@@ -250,7 +279,7 @@ Full per-route contracts are documented in [API.md](./API.md).
 
 ---
 
-## 10. Failure handling / resilience ✅
+## 11. Failure handling / resilience ✅
 
 **Decision.** Degrade gracefully rather than break:
 
@@ -267,19 +296,42 @@ that is strictly better UX than an error state or a frozen table.
 
 ---
 
-## 11. Filters (finance-driven, URL-encoded) 🔜
+## 12. Filters (finance-driven, URL-encoded) ✅
 
-**Decision.** At least three meaningful filters, all encoded in URL search params
-(shareable, refresh-recoverable):
+**Context.** At least three meaningful filters, all encoded in URL search params
+(shareable, refresh-recoverable).
 
-1. **Search** by symbol/company name — fast lookup.
-2. **% change range** — find gainers/losers / momentum.
-3. **Market-cap buckets** (small/mid/large/mega) — company size.
-4. **P/E ratio range** — valuation.
-5. **Proximity to 52-week high/low** — relative position (stretch).
+**Filters implemented and the financial rationale for each:**
+
+| Filter | URL key | Why it matters |
+|---|---|---|
+| Search (symbol / name) | `q` | Zero-friction lookup; the first thing any analyst does |
+| Daily movement | `move` | Most time-critical signal: "show me movers" is why screeners exist |
+| Market-cap bucket | `cap` | Analysts work within a mandate (e.g. "large-cap only"); one click eliminates off-size names |
+| P/E ratio range | `peMin` / `peMax` | Most universally understood valuation filter; separates growth from value |
+| 52-week proximity | `wk52` | Momentum/reversal signal: near-high = strength, near-low = potential value trap or reversal |
+
+**Cap bucket thresholds** (Finnhub unit: millions USD):
+Mega > $200 B · Large $10 B–$200 B · Mid $2 B–$10 B · Small < $2 B
+
+**Big-mover threshold:** ≥ 1 % absolute change (blue-chips rarely move > 2 %, so 1 % is already significant).
+
+**52-week proximity window:** ± 10 % (within 10 % of the 52w high/low).
+
+**Implementation decisions:**
+
+- Filter logic lives entirely in `lib/filters.ts` (pure functions, no React) so it can be unit-tested in isolation and reused by any future route or component.
+- Filter state lives in `ScreenerTable` (the single client-state owner); `FilterBar` is purely controlled (no internal URL logic).
+- URL updates use `router.replace()` with `{ scroll: false }` — no new history entries, no page scroll jump. Only non-default values are written to the URL to keep it readable (e.g. `?move=gainers&cap=mega`).
+- `useSearchParams()` requires a `<Suspense>` boundary; wrapping `ScreenerTable` in `app/page.tsx` enables the RSC to prerender while the client component hydrates with the actual URL params.
+- When a P/E range is set, stocks without P/E data are excluded (cannot confirm they match) — disclosed in the UI.
+
+**API budget impact:** `getScreenerRow` now always fetches metrics (quote + profile + metrics = 3 calls per symbol). `MAX_CONCURRENCY` was lowered from 5 → 3 to spread the cold-start burst. Metrics are cached for 1 h, so steady-state cost remains ~25 quote calls per refresh cycle.
 
 **Trade-offs.** URL-as-state is slightly more verbose than local state but gives
-shareable, reload-safe views for free and keeps filter logic declarative.
+shareable, reload-safe views for free. The filtered count stays live (recomputes
+on every SSE price update via `useMemo`), so an analyst sees instantly when a
+stock crosses into or out of a movement filter.
 
 ---
 

@@ -24,6 +24,28 @@ export function EmptyState() {
   );
 }
 
+/** Shown when active filters reduce the list to zero matches. */
+export function NoMatches({ onReset }: { onReset: () => void }) {
+  return (
+    <tr>
+      <td colSpan={6}>
+        <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
+          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            No stocks match these filters
+          </p>
+          <button
+            type="button"
+            onClick={onReset}
+            className="mt-1 rounded-md px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-slate-200 transition-colors hover:bg-slate-50 dark:text-slate-400 dark:ring-slate-700 dark:hover:bg-slate-800"
+          >
+            Reset filters
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 /** Non-fatal banner shown when the server-side seed fetch failed entirely. */
 export function LoadError() {
   return (

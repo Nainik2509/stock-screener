@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { getScreenerRows } from "@/lib/finnhub/client";
 import { UNIVERSE } from "@/lib/finnhub/universe";
 import ScreenerTable from "@/components/screener/ScreenerTable";
@@ -32,7 +33,14 @@ export default async function HomePage() {
     initialError = true;
   }
 
+  // Suspense is required by Next.js when a client component uses
+  // useSearchParams() — it enables the rest of the page to prerender while
+  // the component hydrates with the actual URL params on the client.
+  // fallback={null}: the server already renders the populated table via RSC
+  // props, so there is no visible loading gap to fill.
   return (
-    <ScreenerTable initialRows={initialRows} initialError={initialError} />
+    <Suspense fallback={null}>
+      <ScreenerTable initialRows={initialRows} initialError={initialError} />
+    </Suspense>
   );
 }

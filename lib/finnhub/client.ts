@@ -1,5 +1,6 @@
 import "server-only";
 
+import { round2 } from "@/lib/finnhub/math";
 import type {
   FinnhubError,
   FinnhubResult,
@@ -23,9 +24,12 @@ const BASE_URL = "https://finnhub.io/api/v1";
 const REQUEST_TIMEOUT_MS = 8_000;
 const SEARCH_TTL_MS = 60_000;
 
-// Bound concurrent upstream calls so a full-universe fetch can't blow past the
-// 60 calls/min rate limit in a single burst.
-const MAX_CONCURRENCY = 5;
+// Bound concurrent upstream calls to spread load across the 60 calls/min free
+// tier. Each screener row now fetches quote + profile + metrics (3 calls),
+// so concurrency 3 means at most 9 simultaneous calls per batch — manageable
+// for the burst allowance; metrics are cached for 1 h so steady-state is far
+// cheaper than the cold-start figure. See docs/DECISIONS.md §13.
+const MAX_CONCURRENCY = 3;
 
 // ---------------------------------------------------------------------------
 // Low-level request helper
@@ -125,10 +129,6 @@ async function cachedResult<T>(
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
-}
-
-function round2(value: number): number {
-  return Math.round(value * 100) / 100;
 }
 
 /** Coalesce a possibly-missing/null/NaN provider number to `number | undefined`. */
@@ -252,41 +252,46 @@ export function searchSymbols(
 // ---------------------------------------------------------------------------
 
 /**
- * Compose a single screener row from a live quote + company profile. Metrics
- * (P/E, 52-week range) are only included when already cached, so building the
- * initial list stays cheap (quote + profile only). A failed quote fails the
- * row; a failed profile degrades gracefully (symbol as name, marketCap 0).
+ * Compose a single screener row from a live quote, company profile, and
+ * fundamentals metrics. All three are fetched in parallel and cached at
+ * different TTLs (quote ~8 s, profile ~12 h, metrics ~1 h), so the steady-
+ * state cost after the first cold load is essentially just one quote call per
+ * symbol. A failed quote fails the row; profile/metrics failures degrade
+ * gracefully so P/E and 52-week fields are undefined rather than crashing.
  */
 export async function getScreenerRow(
   symbol: string,
 ): Promise<FinnhubResult<ScreenerRow>> {
   const sym = symbol.toUpperCase();
-  const [quoteRes, profileRes] = await Promise.all([
+  const [quoteRes, profileRes, metricsRes] = await Promise.all([
     getQuote(sym),
     getProfile(sym),
+    getMetrics(sym),
   ]);
 
   if (!quoteRes.ok) return quoteRes;
   const quote = quoteRes.data;
   const profile = profileRes.ok ? profileRes.data : undefined;
-  const metrics = cache.get<StockMetrics>(`metrics:${sym}`);
+  const metrics = metricsRes.ok ? metricsRes.data : undefined;
 
-  const row: ScreenerRow = {
-    symbol: sym,
-    name: profile?.name ?? sym,
-    price: quote.price,
-    change: quote.change,
-    changePct: quote.changePct,
-    prevClose: quote.prevClose,
-    marketCap: profile?.marketCap ?? 0,
-    peRatio: metrics?.peRatio,
-    week52High: metrics?.week52High,
-    week52Low: metrics?.week52Low,
-    source: "rest",
-    stale: false,
-    updatedAt: quote.updatedAt,
+  return {
+    ok: true,
+    data: {
+      symbol: sym,
+      name: profile?.name ?? sym,
+      price: quote.price,
+      change: quote.change,
+      changePct: quote.changePct,
+      prevClose: quote.prevClose,
+      marketCap: profile?.marketCap ?? 0,
+      peRatio: metrics?.peRatio,
+      week52High: metrics?.week52High,
+      week52Low: metrics?.week52Low,
+      source: "rest",
+      stale: false,
+      updatedAt: quote.updatedAt,
+    },
   };
-  return { ok: true, data: row };
 }
 
 /**
