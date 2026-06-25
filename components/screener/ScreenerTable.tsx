@@ -17,6 +17,7 @@ import {
 } from "@/lib/filters";
 import type { ScreenerFilters } from "@/lib/filters";
 import { UNIVERSE } from "@/lib/finnhub/universe";
+import { useOnlineStatus } from "@/lib/hooks";
 import { FilterBar } from "@/components/filter/FilterBar";
 import { StatusBadge } from "@/components/screener/StatusBadge";
 import type { ConnectionStatus } from "@/components/screener/StatusBadge";
@@ -28,16 +29,28 @@ import {
   NoMatches,
 } from "@/components/screener/ScreenerEmpty";
 import { DetailPanel } from "@/components/detail/DetailPanel";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+
+// How long to wait in error state before we mark the stream as stale.
+const STALE_AFTER_MS = 10_000;
 
 interface Props {
   initialRows: ScreenerRow[];
   initialError?: boolean;
 }
 
+/** Response envelope from GET /api/stocks */
+interface StocksApiResponse {
+  data?: { rows: ScreenerRow[] };
+  error?: { code: string; message: string };
+}
+
 /**
  * Live screener table. Responsibilities:
- *  - Seed row state from the RSC initial fetch.
+ *  - Seed row state from the RSC initial fetch; supports client-side retry.
  *  - Maintain one SSE connection to /api/stream and merge price updates in place.
+ *  - Mark prices as stale when the stream has been down for 10+ seconds.
+ *  - Detect browser offline/online transitions and surface them in the UI.
  *  - Manage filter state + selected symbol, both synced to the URL.
  *  - Render the detail panel when a stock is selected.
  */
@@ -52,9 +65,15 @@ export default function ScreenerTable({
   const [rows, setRows] = useState<ScreenerRow[]>(() =>
     [...initialRows].sort((a, b) => b.marketCap - a.marketCap),
   );
+  const [hasLoadError, setHasLoadError] = useState(initialError);
+  const [retrying, setRetrying] = useState(false);
+
   const [status, setStatus] = useState<ConnectionStatus>("connecting");
   // Partial so indexed access is explicitly T | undefined (noUncheckedIndexedAccess).
   const [flashes, setFlashes] = useState<Partial<Record<string, FlashDir>>>({});
+
+  // Set to true after STALE_AFTER_MS in error state; cleared on next update.
+  const [streamStale, setStreamStale] = useState(false);
 
   // Track last price per symbol to compute flash direction.
   const prevPrices = useRef<Map<string, number>>(
@@ -62,6 +81,9 @@ export default function ScreenerTable({
   );
 
   const handleUpdate = useCallback((update: PriceUpdate) => {
+    // Any arriving update means we're connected — clear the stale flag.
+    setStreamStale(false);
+
     const prev = prevPrices.current.get(update.symbol);
     prevPrices.current.set(update.symbol, update.price);
 
@@ -99,6 +121,7 @@ export default function ScreenerTable({
     setStatus(update.source === "ws" ? "live" : "polling");
   }, []);
 
+  // SSE connection — EventSource auto-reconnects on error.
   useEffect(() => {
     const es = new EventSource("/api/stream");
 
@@ -121,6 +144,48 @@ export default function ScreenerTable({
       es.close();
     };
   }, [handleUpdate]);
+
+  // After STALE_AFTER_MS in error state, mark stream as stale so the UI can
+  // show a subtle "prices may be outdated" hint. Only start the timer when in
+  // error; the stale flag is cleared asynchronously in handleUpdate (which
+  // runs from the EventSource message handler, not inside an effect body).
+  useEffect(() => {
+    if (status !== "error") return;
+    const id = setTimeout(() => setStreamStale(true), STALE_AFTER_MS);
+    return () => clearTimeout(id);
+  }, [status]);
+
+  // -------------------------------------------------------------------------
+  // Offline detection
+  // -------------------------------------------------------------------------
+
+  const isOnline = useOnlineStatus();
+
+  // -------------------------------------------------------------------------
+  // Client-side retry for initial load error
+  // -------------------------------------------------------------------------
+
+  const retryLoad = useCallback(async () => {
+    setRetrying(true);
+    try {
+      const res = await fetch("/api/stocks");
+      // res.json() is typed `any` in the DOM lib; cast to our known envelope.
+      const json = (await res.json()) as StocksApiResponse;
+      if (res.ok && json.data?.rows) {
+        setRows([...json.data.rows].sort((a, b) => b.marketCap - a.marketCap));
+        setHasLoadError(false);
+        // Seed prevPrices from the freshly loaded rows.
+        for (const r of json.data.rows) {
+          prevPrices.current.set(r.symbol, r.price);
+        }
+      }
+      // If request fails, keep the error banner visible.
+    } catch {
+      // Network failure — keep the error banner.
+    } finally {
+      setRetrying(false);
+    }
+  }, []);
 
   // -------------------------------------------------------------------------
   // URL state — filters + selected symbol live together in search params
@@ -198,23 +263,47 @@ export default function ScreenerTable({
     [rows, selectedSymbol],
   );
 
-  // Formatted once per mount — the date doesn't change mid-session.
-  const todayLabel = useMemo(
-    () =>
+  // Formatted once after mount. Initialised to "" so the server-rendered HTML
+  // and the first client render match; the effect sets the real value after
+  // hydration to avoid a server/client timezone mismatch.
+  const [todayLabel, setTodayLabel] = useState<string>("");
+  useEffect(() => {
+    setTodayLabel(
       new Date().toLocaleDateString("en-US", {
         weekday: "short",
         month: "short",
         day: "numeric",
       }),
-    [],
-  );
+    );
+  }, []);
 
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
 
+  const effectiveStatus: ConnectionStatus = !isOnline ? "offline" : status;
+
+  const footerText =
+    effectiveStatus === "offline"
+      ? "You appear to be offline — showing last known prices"
+      : streamStale
+        ? "Stream interrupted — prices may be outdated · reconnecting…"
+        : effectiveStatus === "polling"
+          ? "Prices delayed · REST polling fallback (market closed or socket idle)"
+          : effectiveStatus === "live"
+            ? "Prices updating in real-time via Finnhub WebSocket"
+            : "Prices from last successful fetch";
+
   return (
     <>
+      {/* Offline banner */}
+      {!isOnline && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-center text-xs font-medium text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-400">
+          You appear to be offline — showing last known prices. Prices will
+          resume when you reconnect.
+        </div>
+      )}
+
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
         {/* Page title */}
         <div className="mb-5">
@@ -227,8 +316,10 @@ export default function ScreenerTable({
           </p>
         </div>
 
-        {/* Non-fatal load error */}
-        {initialError && rows.length === 0 && <LoadError />}
+        {/* Non-fatal load error with retry */}
+        {hasLoadError && rows.length === 0 && (
+          <LoadError onRetry={retryLoad} retrying={retrying} />
+        )}
 
         {/* Filter bar */}
         <FilterBar
@@ -239,7 +330,7 @@ export default function ScreenerTable({
         />
 
         {/* Empty states + table */}
-        {rows.length === 0 && !initialError ? (
+        {rows.length === 0 && !hasLoadError ? (
           <EmptyState />
         ) : (
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -248,8 +339,16 @@ export default function ScreenerTable({
               <span className="text-xs text-slate-400 dark:text-slate-500">
                 {todayLabel}
               </span>
-              <StatusBadge status={status} />
+              <StatusBadge status={effectiveStatus} />
             </div>
+
+            {/* Stale-data warning strip */}
+            {streamStale && isOnline && (
+              <div className="border-b border-amber-100 bg-amber-50/60 px-4 py-2 text-xs text-amber-600 dark:border-amber-900/20 dark:bg-amber-950/10 dark:text-amber-500">
+                Stream interrupted — prices shown are from the last successful
+                update and may be outdated.
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[480px] border-collapse text-sm">
@@ -286,23 +385,23 @@ export default function ScreenerTable({
 
             {/* Footer */}
             <div className="border-t border-slate-100 px-4 py-2.5 text-right text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
-              {status === "polling"
-                ? "Prices delayed · REST polling fallback (market closed or socket idle)"
-                : status === "live"
-                  ? "Prices updating in real-time via Finnhub WebSocket"
-                  : "Prices from last successful fetch"}
+              {footerText}
             </div>
           </div>
         )}
       </div>
 
-      {/* Detail panel — rendered outside the table container so it can be fixed */}
+      {/* Detail panel — wrapped in an error boundary so a panel crash never
+          takes down the screener table. Rendered outside the table container
+          so it can use position: fixed. */}
       {selectedSymbol !== null && (
-        <DetailPanel
-          symbol={selectedSymbol}
-          liveRow={liveRow}
-          onClose={closePanel}
-        />
+        <ErrorBoundary label="stock detail panel">
+          <DetailPanel
+            symbol={selectedSymbol}
+            liveRow={liveRow}
+            onClose={closePanel}
+          />
+        </ErrorBoundary>
       )}
     </>
   );

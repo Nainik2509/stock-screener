@@ -1,8 +1,16 @@
 /** Connection state to the /api/stream SSE feed. */
-export type ConnectionStatus = "connecting" | "live" | "polling" | "error";
+export type ConnectionStatus =
+  | "connecting"
+  | "live"
+  | "polling"
+  | "error"
+  | "offline";
 
 function getConfig(status: ConnectionStatus) {
-  const configs = {
+  const configs: Record<
+    ConnectionStatus,
+    { label: string; pulse: boolean; dotCls: string; textCls: string }
+  > = {
     connecting: {
       label: "Connecting…",
       pulse: false,
@@ -25,7 +33,13 @@ function getConfig(status: ConnectionStatus) {
       label: "Reconnecting…",
       pulse: false,
       dotCls: "bg-red-400",
-      textCls: "text-red-600 dark:text-red-400",
+      textCls: "text-red-500 dark:text-red-400",
+    },
+    offline: {
+      label: "Offline",
+      pulse: false,
+      dotCls: "bg-slate-400",
+      textCls: "text-slate-500 dark:text-slate-400",
     },
   };
   return configs[status];

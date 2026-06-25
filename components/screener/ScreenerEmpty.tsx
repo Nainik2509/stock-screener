@@ -46,16 +46,38 @@ export function NoMatches({ onReset }: { onReset: () => void }) {
   );
 }
 
+interface LoadErrorProps {
+  /** If provided, renders a "Try again" button alongside the message. */
+  onRetry?: () => void;
+  /** Shows a spinner on the retry button while loading. */
+  retrying?: boolean;
+}
+
 /** Non-fatal banner shown when the server-side seed fetch failed entirely. */
-export function LoadError() {
+export function LoadError({ onRetry, retrying = false }: LoadErrorProps) {
   return (
-    <div className="rounded-xl border border-red-100 bg-red-50 px-6 py-8 text-center dark:border-red-900/40 dark:bg-red-950/20">
-      <p className="text-sm font-medium text-red-700 dark:text-red-400">
-        Failed to load the initial stock list
-      </p>
-      <p className="mt-1 text-xs text-red-500 dark:text-red-500">
-        Live prices will still stream in as the connection establishes.
-      </p>
+    <div className="mb-4 rounded-xl border border-amber-100 bg-amber-50 px-5 py-4 dark:border-amber-900/30 dark:bg-amber-950/10">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+            Could not load stock data
+          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-amber-600 dark:text-amber-500">
+            Check your API key and network connection. Live prices will stream
+            in once the feed reconnects.
+          </p>
+        </div>
+        {onRetry !== undefined && (
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={retrying}
+            className="shrink-0 rounded-md px-3 py-1.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200 transition-colors hover:bg-amber-100 disabled:opacity-50 dark:text-amber-400 dark:ring-amber-800 dark:hover:bg-amber-900/20"
+          >
+            {retrying ? "Loading…" : "Try again"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

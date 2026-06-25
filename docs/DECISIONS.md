@@ -449,6 +449,57 @@ if the LLM fails.
 
 ---
 
+## 15. Resilience and graceful degradation ✅
+
+**Context.** A fintech tool that goes blank on a network hiccup is unusable.
+Every failure mode should degrade gracefully rather than crash.
+
+**Decisions by failure scenario:**
+
+**SSE stream drop.**
+`EventSource` reconnects automatically; we complement it with:
+- A `STALE_AFTER_MS = 10s` timer: if the stream stays in `error` for 10+ seconds
+  without an update, a subtle amber strip appears ("prices may be outdated"). It
+  clears the moment a new price update arrives, with no user action required.
+- `streamStale` state cleared in `handleUpdate` (first SSE tick after reconnect).
+- The `StatusBadge` shows "Reconnecting…" (red dot) during error; automatically
+  returns to "Live" / "Delayed" when updates resume.
+
+**Browser offline.**
+- `useOnlineStatus()` (lib/hooks.ts) listens to the `window.online`/`offline`
+  events. When offline, a top-of-page amber banner appears and the `StatusBadge`
+  shows "Offline". Prices remain visible as last-known values. On reconnect the
+  banner disappears and the EventSource recovers on its own schedule.
+
+**REST load failure (initial seed).**
+- The `LoadError` banner now includes a "Try again" button. Clicking it fires a
+  client-side `fetch("/api/stocks")` and merges the rows into state — no full
+  page reload needed. Partial success (some symbols failed) silently shows the
+  ones that loaded (already handled in the data layer's `getScreenerRows`).
+
+**Detail panel fetch failure.**
+- `FetchError` now has a "Try again" button wired to a `retryCount` state. Each
+  increment re-runs the `useEffect` that fetches `/api/stock/[symbol]`. The
+  screener table behind the backdrop is unaffected.
+
+**Unexpected JS errors.**
+- `app/error.tsx` (route-segment boundary): catches any render error that
+  escapes the component tree; shows a calm "Reload screener" button that calls
+  `unstable_retry()` without a full navigation.
+- `ErrorBoundary` (components/ErrorBoundary.tsx): component-level boundary using
+  Next.js 16's `unstable_catchError`. Placed around:
+  - `DetailPanel` in `ScreenerTable` — panel crash can't take down the table.
+  - `InsightCard` in `DetailPanel` — insight crash can't take down the panel.
+
+**Trade-offs.**
+- `EventSource` reconnect timing is browser-controlled (typically 3 s). We have
+  no backoff override at the client level — acceptable since the SSE route's
+  server-side socket already handles reconnect with exponential backoff.
+- `navigator.onLine` is a hint (LAN without internet looks "online"); the banner
+  is informational only, not relied upon for routing/data decisions.
+
+---
+
 ## Notable trade-offs summary (called out, not hidden)
 
 - **Single-instance assumption** for the SSE/WS singleton and in-memory cache —

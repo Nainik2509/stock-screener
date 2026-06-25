@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 import type { ScreenerRow, StockDetail } from "@/lib/types";
 import { fmtChange, fmtChangePct, fmtMarketCap, fmtPrice } from "@/lib/formatters";
 import { Range52W } from "@/components/detail/Range52W";
 import { StatItem } from "@/components/detail/StatItem";
 import { PanelSkeleton } from "@/components/detail/PanelSkeleton";
 import { InsightCard } from "@/components/detail/InsightCard";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -84,15 +85,28 @@ function CloseButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function FetchError({ message }: { message: string }) {
+function FetchError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry: () => void;
+}) {
   return (
-    <div className="rounded-xl border border-red-100 bg-red-50 p-5 text-center dark:border-red-900/30 dark:bg-red-950/20">
-      <p className="text-sm font-semibold text-red-700 dark:text-red-400">
-        Failed to load detail
+    <div className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-center dark:border-slate-700/60 dark:bg-slate-800/30">
+      <p className="text-sm font-semibold text-slate-600 dark:text-slate-400">
+        Could not load detail
       </p>
-      <p className="mt-1.5 text-xs leading-relaxed text-red-500 dark:text-red-500">
+      <p className="mt-1.5 text-xs leading-relaxed text-slate-400 dark:text-slate-500">
         {message}
       </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-4 rounded-lg bg-slate-900 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-700 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+      >
+        Try again
+      </button>
     </div>
   );
 }
@@ -205,9 +219,12 @@ function DetailContent({
         </div>
       </div>
 
-      {/* ── AI Insight — isolated; failures never affect the rest ───────── */}
-      {/* key={symbol} remounts the card on stock change, resetting to idle. */}
-      <InsightCard key={detail.symbol} symbol={detail.symbol} />
+      {/* ── AI Insight — isolated behind an error boundary so any unexpected
+          render error in InsightCard never takes down the detail panel. */}
+      <ErrorBoundary label="AI insight card">
+        {/* key={symbol} remounts the card on stock change, resetting to idle. */}
+        <InsightCard key={detail.symbol} symbol={detail.symbol} />
+      </ErrorBoundary>
     </div>
   );
 }
@@ -233,6 +250,10 @@ interface Props {
 export function DetailPanel({ symbol, liveRow, onClose }: Props) {
   const [fetchState, dispatch] = useReducer(fetchReducer, { status: "loading" });
 
+  // Incrementing this triggers the fetch effect without changing the symbol.
+  const [retryCount, setRetryCount] = useState(0);
+  const retry = useCallback(() => setRetryCount((n) => n + 1), []);
+
   // Escape key
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -242,9 +263,8 @@ export function DetailPanel({ symbol, liveRow, onClose }: Props) {
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  // Fetch full detail whenever the symbol changes. A single dispatch("start")
-  // resets all sub-states atomically, avoiding multiple synchronous setState
-  // calls in the effect body.
+  // Fetch full detail whenever the symbol changes or the user retries. A
+  // single dispatch("start") resets all sub-states atomically.
   useEffect(() => {
     let cancelled = false;
     dispatch({ type: "start" });
@@ -264,7 +284,8 @@ export function DetailPanel({ symbol, liveRow, onClose }: Props) {
         if (!cancelled) {
           dispatch({
             type: "error",
-            message: err instanceof Error ? err.message : "Unexpected error",
+            message:
+              err instanceof Error ? err.message : "Network error — try again",
           });
         }
       }
@@ -274,7 +295,7 @@ export function DetailPanel({ symbol, liveRow, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [symbol]);
+  }, [symbol, retryCount]);
 
   // Prefer live SSE price over the (stale) fetched snapshot.
   const detail =
@@ -347,7 +368,7 @@ export function DetailPanel({ symbol, liveRow, onClose }: Props) {
           {fetchState.status === "loading" && <PanelSkeleton />}
 
           {fetchState.status === "error" && (
-            <FetchError message={fetchState.message} />
+            <FetchError message={fetchState.message} onRetry={retry} />
           )}
 
           {fetchState.status === "success" && (
