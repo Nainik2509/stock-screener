@@ -31,6 +31,8 @@ export function statusForCode(code: string): number {
     case "TIMEOUT":
       return 504;
     case "NETWORK":
+    case "LLM_ERROR":
+      // Upstream provider (Finnhub / LLM) failed — we are the gateway.
       return 502;
     case "CONFIG":
       return 500;

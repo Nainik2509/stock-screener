@@ -6,6 +6,7 @@ import { fmtChange, fmtChangePct, fmtMarketCap, fmtPrice } from "@/lib/formatter
 import { Range52W } from "@/components/detail/Range52W";
 import { StatItem } from "@/components/detail/StatItem";
 import { PanelSkeleton } from "@/components/detail/PanelSkeleton";
+import { InsightCard } from "@/components/detail/InsightCard";
 
 // ---------------------------------------------------------------------------
 // Local types
@@ -204,38 +205,9 @@ function DetailContent({
         </div>
       </div>
 
-      {/* ── AI Insight placeholder — wired up in Step 8 ─────────────────── */}
-      <div>
-        <SectionHeading>AI Insight</SectionHeading>
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-slate-700/60 dark:bg-slate-800/20">
-          <div className="flex size-9 items-center justify-center rounded-full bg-white shadow-sm dark:bg-slate-800">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              className="text-slate-400 dark:text-slate-500"
-              aria-hidden="true"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z"
-              />
-            </svg>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              AI Insight
-            </p>
-            <p className="mt-1 max-w-[220px] text-xs leading-relaxed text-slate-400 dark:text-slate-500">
-              Coming in the next step — a concise LLM summary of this stock.
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* ── AI Insight — isolated; failures never affect the rest ───────── */}
+      {/* key={symbol} remounts the card on stock change, resetting to idle. */}
+      <InsightCard key={detail.symbol} symbol={detail.symbol} />
     </div>
   );
 }

@@ -369,7 +369,7 @@ losing their screener view. The view must be shareable via URL.
     52W low and 52W high — visually immediate, no numbers needed to get the idea.
   - Key stats: P/E, day high/low, open, prev close, 52W high/low, avg volume, mkt cap.
   - Company profile: industry, exchange, currency.
-  - An "AI Insight" placeholder card (wired up in Step 8).
+  - An `InsightCard` for AI commentary (see §14).
 
 - **Why a panel over a dedicated route?** The screener's primary value is watching
   multiple stocks live; navigating away loses that context. A panel keeps both
@@ -380,6 +380,72 @@ losing their screener view. The view must be shareable via URL.
   for this scope; a production tool might use a resizable split-pane layout instead.
 - The `liveRow` memo (`rows.find(...)`) re-runs on every SSE tick, but `Array.find`
   on ~25 items is negligible.
+
+---
+
+## 14. AI insight: provider-agnostic adapter, isolated by design ✅
+
+**Context.** The app needs a short, analyst-style AI commentary per stock. It
+must feel responsive and, critically, **never** break the screener or detail view
+if the LLM fails.
+
+**Decision.**
+
+- **Provider-agnostic adapter (`lib/llm/`).** A tiny `LLMProvider` interface
+  (`generate(prompt, signal) → string`) is implemented by `gemini.ts` and
+  `openai.ts` as factory functions. `index.ts` exposes a single
+  `generateInsight(prompt): Promise<LLMResult>` that selects a provider from env,
+  enforces a timeout, and returns a typed result. **Swapping providers only
+  touches the adapter** — the route and UI never change.
+
+- **One prompt, both providers.** The full persona + instructions + data live in
+  the route's `buildPrompt` (single source of truth). The adapters are pure
+  transports that send that prompt verbatim — neither injects its own system
+  message — so a Gemini→OpenAI fallback produces consistent output.
+
+- **Default Gemini 2.0 Flash, automatic runtime fallback to OpenAI gpt-4o-mini.**
+  `generateInsight` builds an ordered provider chain and tries each in turn:
+  Gemini first (genuine free tier, no credit card), then OpenAI if Gemini **fails
+  at runtime** (quota exhausted, outage, etc.). `LLM_PROVIDER=openai` flips the
+  order so OpenAI is primary and Gemini the fallback. Only providers whose key is
+  present are included. If every provider fails, the most recent error is returned
+  and the UI shows a single friendly message. Both models are cheap, fast, and
+  more than capable of a 2–3 sentence grounded summary.
+
+- **Grounded prompt, built server-side.** The route pulls the same `StockDetail`
+  the panel shows and converts it to a compact fact list (price, today's move,
+  P/E, market cap, 52-week range + computed position). The system instruction
+  says *use only this data, reference the numbers, no advice, no hype*. This keeps
+  output factual rather than hallucinated, and means the AI comments on the exact
+  numbers the analyst is looking at. `temperature: 0.4` favours consistency.
+
+- **Isolation is the golden rule.**
+  - Adapter returns errors (never throws); the route wraps everything in
+    try/catch and maps to the standard `{ error: { code, message } }` envelope.
+  - The `InsightCard` is a self-contained `useReducer` state machine
+    (idle → loading → success | error). On failure it shows an inline
+    "try again" — the screener table and the rest of the panel are untouched.
+  - `key={symbol}` remounts the card per stock, so each panel starts fresh.
+
+- **Security.** Both keys are server-side only (`import "server-only"` in every
+  adapter file). The browser receives only `{ insight, model }` — never the key,
+  never the raw provider JSON.
+
+- **Resilience knobs.** Symbol is validated against the universe **before** any
+  data/LLM call (no arbitrary-symbol LLM spend). A single **15s** wall-clock
+  budget is shared across the whole provider chain (`AbortController`), so even a
+  Gemini-then-OpenAI fallback can't hang the request beyond 15s total.
+
+**Trade-offs.**
+- **No response caching.** Each click calls the LLM fresh. Fine at this scale; a
+  production build might cache per-symbol for a few minutes to cut cost/latency.
+- **On-demand only.** Insights generate on button click, not eagerly on panel
+  open — this respects free-tier quotas and keeps the panel instant.
+- **Free-tier limits.** Gemini's free tier has request/day quotas; when exhausted
+  the chain automatically falls back to OpenAI. Only if **both** providers fail
+  does the route return a clean `502 LLM_ERROR` and the UI degrade gracefully.
+- **No streaming.** A 2–3 sentence response is short enough that a spinner is
+  simpler and smooth; token streaming would add complexity for little UX gain here.
 
 ---
 

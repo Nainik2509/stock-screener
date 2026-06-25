@@ -4,11 +4,13 @@ A real-time stock screener for US equities, built with **Next.js (App Router)**,
 **TypeScript**, and **Tailwind CSS**, powered by the **Finnhub** free-tier API for
 market data and a real **LLM** for AI-generated insights.
 
-> Status: in progress. The Finnhub data layer, REST routes, SSE streaming,
-> and the live screener UI (`ScreenerTable` with dark mode + price-flash
-> animations) are implemented. Components are organised in a feature-first
-> structure (`components/screener/`). Filters, detail panel, and AI insight
-> are next — see [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+> Status: feature-complete. Implemented: the Finnhub data layer, REST routes,
+> SSE live streaming, the live screener UI (`ScreenerTable` with dark mode +
+> price-flash animations), finance-driven URL-synced filters, the slide-in
+> stock detail panel, and the AI insight feature (provider-agnostic
+> Gemini/OpenAI adapter). Components follow a feature-first structure
+> (`components/screener/`, `components/filter/`, `components/detail/`) — see
+> [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Documentation
 
@@ -93,5 +95,8 @@ etc.). They are documented in full in [.claude/CLAUDE.md](./.claude/CLAUDE.md).
 - Finnhub free-tier trades stream during **US market hours**; outside them the app
   falls back to REST `/quote` polling (still real data, less frequent).
 - The symbol universe is a curated ~25-ticker list (symbols only, never prices).
+- AI insights are generated on demand (per button click) and not cached; the LLM
+  call has a 15s timeout and free-tier providers have daily quotas. A failed
+  insight degrades gracefully and never affects the screener or detail view.
 
 Details and rationale: [docs/DECISIONS.md](./docs/DECISIONS.md).

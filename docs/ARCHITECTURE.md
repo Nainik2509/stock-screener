@@ -39,10 +39,10 @@ the same stream is fed by periodic REST `/quote` polling so it always feels live
 | API routes | `app/api/*` | Validate, call data/LLM layer, return typed JSON/SSE (Node runtime) |
 | Screener feature | `components/screener/*` | Live table, row, status badge, empty/no-match states (Tailwind only) |
 | Filter feature | `components/filter/*` | Controlled filter bar (chip + input UI); no URL logic inside |
-| Detail feature | `components/detail/*` | Slide-in panel: Range52W bar, StatItem, PanelSkeleton, DetailPanel |
-| Global UI | `components/*.tsx` | Layout-level components (ThemeToggle); future: InsightCard |
+| Detail feature | `components/detail/*` | Slide-in panel: Range52W bar, StatItem, PanelSkeleton, DetailPanel, InsightCard |
+| Global UI | `components/*.tsx` | Layout-level components (ThemeToggle) |
 | Data layer | `lib/finnhub/*` | REST client, TTL cache, WS singleton, symbol universe, raw types, shared math |
-| AI layer | `lib/llm/*` | Provider-agnostic LLM adapter (planned) |
+| AI layer | `lib/llm/*` | Provider-agnostic LLM adapter (Gemini/OpenAI) + selection + timeout |
 | Shared types | `lib/types.ts` | App-facing DTOs — decoupled from raw Finnhub shapes |
 | Filters | `lib/filters.ts` | Pure filter types, `applyFilters`, and URL serialisation helpers |
 | Formatters | `lib/formatters.ts` | Pure price/market-cap formatting helpers (no React) |
@@ -62,7 +62,7 @@ stock-screener/
 │   │   ├── stocks/route.ts         # [x] GET screener list
 │   │   ├── stock/[symbol]/route.ts # [x] GET detail (quote+profile+metrics)
 │   │   ├── stream/route.ts         # [x] GET SSE live prices
-│   │   └── insight/[symbol]/       # [ ] POST LLM insight
+│   │   └── insight/[symbol]/route.ts # [x] POST LLM insight (grounded prompt)
 │   ├── globals.css                 # [x] Tailwind v4 + dark variant + flash keyframes
 │   ├── layout.tsx                  # [x] Root layout, theme script, header
 │   └── page.tsx                    # [x] Home RSC — fetches seed, mounts ScreenerTable
@@ -78,9 +78,9 @@ stock-screener/
 │   │   ├── DetailPanel.tsx         # [x] slide-in panel, URL-synced, live price overlay
 │   │   ├── Range52W.tsx            # [x] 52-week range horizontal bar
 │   │   ├── StatItem.tsx            # [x] label/value stat row
-│   │   └── PanelSkeleton.tsx       # [x] animated loading skeleton
-│   ├── ThemeToggle.tsx             # [x] dark/light toggle (layout-level concern)
-│   └── InsightCard.tsx             # [ ] AI insight (Step 8)
+│   │   ├── PanelSkeleton.tsx       # [x] animated loading skeleton
+│   │   └── InsightCard.tsx         # [x] AI insight generator (isolated state machine)
+│   └── ThemeToggle.tsx             # [x] dark/light toggle (layout-level concern)
 ├── lib/
 │   ├── types.ts                    # [x] app-facing DTOs (StockQuote, ScreenerRow, StockDetail…)
 │   ├── filters.ts                  # [x] ScreenerFilters type, applyFilters, URL helpers
@@ -93,10 +93,11 @@ stock-screener/
 │   │   ├── socket.ts               # [x] upstream WS singleton + REST poll fallback
 │   │   ├── math.ts                 # [x] shared numeric helpers (round2) — no duplication
 │   │   └── universe.ts             # [x] ~25 US ticker symbols (never prices)
-│   └── llm/                        # [ ] LLM adapter (Step 7)
-│       ├── provider.ts             # [ ] LLMProvider interface + auto-selector
-│       ├── gemini.ts               # [ ] Gemini 2.0-flash implementation
-│       └── openai.ts               # [ ] OpenAI gpt-4o-mini implementation
+│   └── llm/                        # [x] provider-agnostic LLM adapter
+│       ├── types.ts                # [x] LLMProvider interface + LLMResult
+│       ├── index.ts                # [x] provider auto-selection + 15s timeout
+│       ├── gemini.ts               # [x] Gemini 2.0 Flash provider factory
+│       └── openai.ts               # [x] OpenAI gpt-4o-mini provider factory
 ├── docs/
 │   ├── DECISIONS.md                # [x] decisions & trade-offs
 │   ├── ARCHITECTURE.md             # [x] this file
