@@ -5,6 +5,7 @@ import type {
   FinnhubResult,
   ScreenerRow,
   ScreenerRowsResult,
+  StockDetail,
   StockMetrics,
   StockProfile,
   StockQuote,
@@ -135,6 +136,12 @@ function optionalNumber(value: unknown): number | undefined {
   return isFiniteNumber(value) ? value : undefined;
 }
 
+/** Like `optionalNumber`, but rounded to 2 decimals when present. */
+function optionalRounded(value: unknown): number | undefined {
+  const n = optionalNumber(value);
+  return n === undefined ? undefined : round2(n);
+}
+
 // ---------------------------------------------------------------------------
 // Typed REST wrappers (raw -> normalized DTO, cached)
 // ---------------------------------------------------------------------------
@@ -186,7 +193,7 @@ export function getProfile(symbol: string): Promise<FinnhubResult<StockProfile>>
       data: {
         symbol: sym,
         name: p.name,
-        marketCap: optionalNumber(p.marketCapitalization) ?? 0,
+        marketCap: round2(optionalNumber(p.marketCapitalization) ?? 0),
         industry: p.finnhubIndustry ?? "Unknown",
         currency: p.currency ?? "USD",
         logo: p.logo !== undefined && p.logo.length > 0 ? p.logo : undefined,
@@ -209,10 +216,10 @@ export function getMetrics(symbol: string): Promise<FinnhubResult<StockMetrics>>
       ok: true,
       data: {
         symbol: sym,
-        peRatio: optionalNumber(m.peTTM ?? m.peBasicExclExtraTTM),
-        week52High: optionalNumber(m["52WeekHigh"]),
-        week52Low: optionalNumber(m["52WeekLow"]),
-        avgVolume: optionalNumber(m["10DayAverageTradingVolume"]),
+        peRatio: optionalRounded(m.peTTM ?? m.peBasicExclExtraTTM),
+        week52High: optionalRounded(m["52WeekHigh"]),
+        week52Low: optionalRounded(m["52WeekLow"]),
+        avgVolume: optionalRounded(m["10DayAverageTradingVolume"]),
       },
     };
   });
@@ -280,6 +287,53 @@ export async function getScreenerRow(
     updatedAt: quote.updatedAt,
   };
   return { ok: true, data: row };
+}
+
+/**
+ * Compose the richer single-stock detail from quote + profile + metrics. Unlike
+ * the list row, this fetches metrics (P/E, 52-week range, avg volume) since the
+ * detail view is opened for one symbol at a time, well within the rate budget.
+ * A failed quote fails the request; profile/metrics failures degrade to
+ * sensible fallbacks so a partial detail still renders.
+ */
+export async function getStockDetail(
+  symbol: string,
+): Promise<FinnhubResult<StockDetail>> {
+  const sym = symbol.toUpperCase();
+  const [quoteRes, profileRes, metricsRes] = await Promise.all([
+    getQuote(sym),
+    getProfile(sym),
+    getMetrics(sym),
+  ]);
+
+  if (!quoteRes.ok) return quoteRes;
+  const quote = quoteRes.data;
+  const profile = profileRes.ok ? profileRes.data : undefined;
+  const metrics = metricsRes.ok ? metricsRes.data : undefined;
+
+  const detail: StockDetail = {
+    symbol: sym,
+    name: profile?.name ?? sym,
+    price: quote.price,
+    change: quote.change,
+    changePct: quote.changePct,
+    prevClose: quote.prevClose,
+    open: quote.open,
+    high: quote.high,
+    low: quote.low,
+    marketCap: profile?.marketCap ?? 0,
+    industry: profile?.industry ?? "Unknown",
+    currency: profile?.currency ?? "USD",
+    logo: profile?.logo,
+    peRatio: metrics?.peRatio,
+    week52High: metrics?.week52High,
+    week52Low: metrics?.week52Low,
+    volume: metrics?.avgVolume,
+    source: "rest",
+    stale: false,
+    updatedAt: quote.updatedAt,
+  };
+  return { ok: true, data: detail };
 }
 
 /**

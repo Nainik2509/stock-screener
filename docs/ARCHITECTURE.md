@@ -47,38 +47,41 @@ the same stream is fed by periodic REST `/quote` polling so it always feels live
 Feature-first, root-level layout (no `src/` directory), so paths map directly to
 responsibilities. `[ ]` marks items planned in later phases.
 
+Legend: `[x]` implemented · `[ ]` planned in a later phase.
+
 ```
 stock-screener/
 ├── app/
 │   ├── api/                 # Route Handlers (Node runtime)
-│   │   ├── stocks/          # [ ] GET screener seed list
+│   │   ├── stocks/          # [x] GET screener list
+│   │   ├── stock/[symbol]/  # [x] GET detail (quote+profile+metrics)
 │   │   ├── stream/          # [ ] GET SSE live prices
-│   │   ├── stock/[symbol]/  # [ ] GET detail (quote+profile+metrics)
 │   │   └── insight/[symbol]/# [ ] POST LLM insight
-│   ├── globals.css          # Tailwind v4 entry (@import "tailwindcss")
-│   ├── layout.tsx           # Root layout + metadata
-│   └── page.tsx             # Home (RSC) -> renders ScreenerTable
+│   ├── globals.css          # [x] Tailwind v4 entry (@import "tailwindcss")
+│   ├── layout.tsx           # [x] Root layout + metadata
+│   └── page.tsx             # [x] Home placeholder (RSC) -> ScreenerTable later
 ├── components/              # Client/presentational components (Tailwind only)
 │   ├── ScreenerTable.tsx    # [ ] live table: SSE merge, sort
 │   ├── FilterBar.tsx        # [ ] URL-synced filters
 │   ├── DetailPanel.tsx      # [ ] ?symbol= side panel
 │   └── InsightCard.tsx      # [ ] AI insight (isolated failures)
 ├── lib/
-│   ├── types.ts             # [ ] app-facing DTOs
+│   ├── types.ts             # [x] app-facing DTOs (+ StockDetail)
+│   ├── http.ts              # [x] route response helpers (jsonOk/jsonError/status)
 │   ├── finnhub/
-│   │   ├── types.ts         # [ ] raw Finnhub response shapes
-│   │   ├── client.ts        # [ ] typed REST wrappers
-│   │   ├── cache.ts         # [ ] in-memory TTL cache
+│   │   ├── types.ts         # [x] raw Finnhub response shapes
+│   │   ├── client.ts        # [x] typed REST wrappers + screener/detail compose
+│   │   ├── cache.ts         # [x] in-memory TTL cache + single-flight
 │   │   ├── socket.ts        # [ ] upstream WS singleton + poll fallback
-│   │   └── universe.ts      # [ ] ~25 US ticker symbols
+│   │   └── universe.ts      # [x] ~25 US ticker symbols
 │   └── llm/
 │       ├── provider.ts      # [ ] LLMProvider interface + selector
 │       ├── gemini.ts        # [ ] Gemini implementation
 │       └── openai.ts        # [ ] OpenAI implementation
 ├── docs/
-│   ├── DECISIONS.md         # decisions & trade-offs
-│   ├── ARCHITECTURE.md      # this file
-│   └── API.md               # [ ] per-route contracts
+│   ├── DECISIONS.md         # [x] decisions & trade-offs
+│   ├── ARCHITECTURE.md      # [x] this file
+│   └── API.md               # [x] per-route contracts
 ├── .claude/CLAUDE.md        # AI guidance + hard constraints
 ├── .env.example             # documented env vars (server-side only)
 ├── README.md                # entry point + navigation

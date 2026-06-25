@@ -4,8 +4,9 @@ A real-time stock screener for US equities, built with **Next.js (App Router)**,
 **TypeScript**, and **Tailwind CSS**, powered by the **Finnhub** free-tier API for
 market data and a real **LLM** for AI-generated insights.
 
-> Status: foundation scaffolded. Feature implementation is in progress — see the
-> build order in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+> Status: in progress. The Finnhub data layer and the REST API routes
+> (`GET /api/stocks`, `GET /api/stock/[symbol]`) are implemented; streaming and UI
+> are next — see the build order in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Documentation
 
@@ -13,8 +14,8 @@ market data and a real **LLM** for AI-generated insights.
 | --- | --- |
 | [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | System overview, project structure, layers, and data-flow diagrams |
 | [docs/DECISIONS.md](./docs/DECISIONS.md) | Key decisions and trade-offs (architecture, data flow, rendering, failure handling) |
+| [docs/API.md](./docs/API.md) | Per-route API contracts (request/response, errors, caching) |
 | [.claude/CLAUDE.md](./.claude/CLAUDE.md) | AI-assistant guidance and the non-negotiable hard constraints |
-| docs/API.md | Per-route API contracts (added in the API phase) |
 
 ## Tech stack
 

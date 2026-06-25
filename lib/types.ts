@@ -76,6 +76,27 @@ export interface ScreenerRow {
 }
 
 /**
+ * The richer single-stock detail shape. Extends the list row with intraday and
+ * fundamental fields surfaced on the detail view.
+ *
+ * Note on `volume`: the Finnhub free tier does not expose intraday cumulative
+ * volume on the quote endpoint, so this carries the 10-day average trading
+ * volume (from /stock/metric) as a reasonable proxy. See docs/DECISIONS.md.
+ */
+export interface StockDetail extends ScreenerRow {
+  open: number;
+  /** intraday high */
+  high: number;
+  /** intraday low */
+  low: number;
+  industry: string;
+  currency: string;
+  logo?: string;
+  /** 10-day average trading volume (free-tier proxy for volume) */
+  volume?: number;
+}
+
+/**
  * A typed result wrapper so callers never see thrown raw errors. Every Finnhub
  * client function resolves to one of these instead of throwing.
  */

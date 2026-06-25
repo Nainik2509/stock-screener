@@ -113,6 +113,19 @@ Fundamentals (P/E, 52-week range) are fetched **lazily on the detail view** rath
 than for every row on initial load, to keep the first screen well under the rate
 limit (~25 symbols × quote+profile ≈ 50 calls; profiles cached long).
 
+The cache also does **single-flight de-duplication**: concurrent loads for the
+same key are coalesced into one upstream call, and failures are **not cached**
+(so a transient 429/network blip isn't pinned for the whole TTL).
+
+**Field normalization notes (data fidelity).**
+- **`marketCap`** is returned by Finnhub in **millions of the listing currency**;
+  we keep that unit (rounded to 2 dp) and leave human formatting to the UI.
+- **`volume`** uses the **10-day average trading volume** from `/stock/metric`,
+  because the free-tier `/quote` does not expose intraday cumulative volume. It is
+  a documented proxy, not live session volume.
+- All DTO numbers pass through finite-number guards so missing/`null`/`NaN`
+  provider values become `undefined` (optionals) — never `NaN`.
+
 **Trade-offs.** Cache is per-instance and lost on restart (acceptable here). Lazy
 metrics mean the detail panel has a brief load on first open — a deliberate trade
 to protect the rate budget.
@@ -158,8 +171,17 @@ required to justify any unavoidable use). Raw Finnhub response shapes live in
 **normalized before reaching the UI** so components depend on stable, intentful
 types rather than provider quirks.
 
+The server boundary is enforced with the `server-only` package: `cache.ts` and
+`client.ts` (which touch the key / hold state) import `"server-only"`, so any
+accidental import into a client component fails the build. The two `types.ts`
+files stay type-only and remain safe to import from client components. Finnhub
+auth uses the `X-Finnhub-Token` **header** (not a query param) so the key never
+lands in a URL or log.
+
 **Trade-offs.** Slightly more boilerplate (two type layers), bought back in
-refactor safety and a clean UI/provider boundary.
+refactor safety and a clean UI/provider boundary. `server-only` is a tiny extra
+dependency, needed so the boundary also type-checks under `tsc` (it isn't
+resolvable standalone otherwise).
 
 ---
 
@@ -180,18 +202,33 @@ bundle lean. v4's zero-config content detection removes a class of
 
 ---
 
-## 9. API surface and error handling ✅ / 🔜
+## 9. API surface and error handling ✅ (REST) / 🔜 (stream, insight)
 
-**Decision.** Four Node-runtime route handlers, each returning a typed success
-shape or a typed error envelope `{ error: { code, message } }` — they **never
-throw to the client**:
+**Decision.** Node-runtime route handlers, each returning a typed success shape
+`{ data }` or a typed error envelope `{ error: { code, message } }` — they
+**never throw to the client** (wrapped in try/catch):
 
-- `GET /api/stocks` — normalized screener seed list (cached).
-- `GET /api/stream` — SSE live prices (`source: ws|poll`); `dynamic = 'force-dynamic'`.
-- `GET /api/stock/[symbol]` — detail: quote + profile + metrics.
-- `POST /api/insight/[symbol]` — LLM insight from a server-built data summary.
+- `GET /api/stocks` ✅ — normalized screener list `{ rows, count, failures }`,
+  CDN-cacheable (`s-maxage=8`).
+- `GET /api/stock/[symbol]` ✅ — detail: quote + profile + metrics; symbol is
+  validated (format + restricted to the universe).
+- `GET /api/stream` 🔜 — SSE live prices (`source: ws|poll`); `force-dynamic`.
+- `POST /api/insight/[symbol]` 🔜 — LLM insight from a server-built data summary.
 
-Full per-route contracts will live in `docs/API.md` (added in the API phase).
+A shared helper (`lib/http.ts`) maps domain error codes to HTTP status:
+`RATE_LIMITED → 429` (with `Retry-After`), `INVALID_SYMBOL → 404`,
+`BAD_REQUEST`/`SYMBOL_NOT_ALLOWED → 400`, `TIMEOUT → 504`, `NETWORK`/upstream
+`HTTP_* → 502`, `CONFIG`/unknown → 500. Success responses set
+`Cache-Control: public, s-maxage=8, stale-while-revalidate=32` so a CDN can keep
+prices live without re-fetching on every request; errors are `no-store`.
+
+**Symbol validation trade-off.** The detail route restricts symbols to the
+universe and returns `400 SYMBOL_NOT_ALLOWED` for anything else (after a format
+check), so the endpoint can't be used to hammer Finnhub with arbitrary tickers.
+This is stricter than a generic `404`; it makes the "fixed universe" boundary
+explicit. Easily relaxed if the universe later becomes search-driven.
+
+Full per-route contracts are documented in [API.md](./API.md).
 
 ---
 
